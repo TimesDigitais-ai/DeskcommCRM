@@ -16,7 +16,7 @@ import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
-  resolveSessionRef,
+  resolveSessionRefDeMidia,
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
@@ -103,7 +103,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       const adapter = getAdapter(
         ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
       );
-      const sessionRef = sessao ? resolveSessionRef(sessao as unknown as ChannelSessionRef) : null;
+      const sessionRef = sessao ? resolveSessionRefDeMidia(sessao as unknown as ChannelSessionRef) : null;
       if (!adapter.fetchInboundMedia || !sessionRef) {
         // Canal sem mídia de entrada não é defeito: é estado normal. 404 diz a
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.

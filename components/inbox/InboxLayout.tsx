@@ -18,6 +18,7 @@ import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
+import { canalSomenteLeitura } from "@/lib/channels/mirror/policy";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { RetentionNotice } from "./RetentionNotice";
@@ -314,6 +315,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // Reusa o `blockedReason` que já existe (contato bloqueado/anonimizado) em vez
   // de um segundo mecanismo de bloqueio: dois caminhos para desabilitar o mesmo
   // composer divergem, e o segundo esquece de cobrir o áudio ou o anexo.
+  const espelhada = canalSomenteLeitura(selectedConversation?.channel_sessions?.provider);
   const janela = estadoDaJanela(
     selectedConversation?.channel_sessions?.provider ?? null,
     selectedConversation?.last_inbound_at ?? null,
@@ -487,9 +489,16 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         )}
         {selectedConversation ? (
           <>
-            {/* `key`: trocar de conversa desmonta a confirmação de Fechar/Arquivar
-                aberta — senão o clique de dentro agiria sobre a conversa nova. */}
-            <ConversationHeader key={selectedConversation.id} conversation={selectedConversation} />
+            {espelhada ? (
+              <div className="border-b p-4">
+                <strong>{selectedConversation.contacts?.name ?? selectedConversation.contacts?.phone_number ?? t("Conversa espelhada")}</strong>
+                <p className="text-sm text-muted-foreground">{t("Somente leitura · atendimento na plataforma de origem")}</p>
+              </div>
+            ) : (
+              /* `key`: trocar de conversa desmonta a confirmação de Fechar/Arquivar
+                 aberta — senão o clique de dentro agiria sobre a conversa nova. */
+              <ConversationHeader key={selectedConversation.id} conversation={selectedConversation} />
+            )}
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread
                 conversationId={selectedConversation.id}
@@ -513,7 +522,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
                 motivo={motivoDaJanela}
               />
             )}
-            <Composer
+            {espelhada ? <div role="status" className="border-t p-4 text-sm text-muted-foreground">{t("Espelho somente leitura. Para responder, use a plataforma onde este número já é atendido.")}</div> : <Composer
               ref={composerRef}
               conversationId={selectedConversation.id}
               blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
@@ -523,7 +532,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               respondendo={respondendo}
               onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}
-            />
+            />}
           </>
         ) : selectionNotFound ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
@@ -547,8 +556,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         selectedId={selectedId}
         onSelect={handleSelect}
         onFocusReply={handleFocusReply}
-        onClaim={supportReadonly ? () => {} : handleClaim}
-        onClose={supportReadonly ? () => {} : handleClose}
+        onClaim={supportReadonly || espelhada ? () => {} : handleClaim}
+        onClose={supportReadonly || espelhada ? () => {} : handleClose}
         onToggleHelp={() => setHelpOpen((v) => !v)}
       />
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />

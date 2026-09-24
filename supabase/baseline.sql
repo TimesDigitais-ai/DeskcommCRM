@@ -264,6 +264,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_emit_message_event"() RETURNS "trigger"
 declare
   v_event text;
 begin
+  if exists (select 1 from public.channel_sessions where id=new.channel_session_id and organization_id=new.organization_id and provider='mirror') then return new; end if;
   if new.direction = 'inbound' then
     v_event := 'message.received';
   else
@@ -4370,7 +4371,9 @@ GRANT ALL ON FUNCTION "public"."fn_emit_event_on_lead_change"() TO "service_role
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_emit_message_event"() TO "anon";
+-- (sem GRANT a anon aqui: o apêndice do espelho (migration 0392) revoga o EXECUTE de public/anon
+-- desta função; o corpo não pode reconceder o que o apêndice tira — ver
+-- tests/unit/baseline-nao-reconcede-o-que-revoga.test.ts)
 GRANT ALL ON FUNCTION "public"."fn_emit_message_event"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_emit_message_event"() TO "service_role";
 
@@ -9281,9 +9284,10 @@ alter table public.channel_sessions
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'mirror'
+  -- (0392, renumerada de 0261 na reconciliação com o upstream) somados AQUI —
   -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'mirror'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9296,7 +9300,9 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    (provider = 'mirror'     and phone_number is not null and waha_session_name is null
+      and meta_phone_number_id is null and zernio_account_id is null and wacalls_session_id is null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -22377,6 +22383,7 @@ declare c public.conversations;
 begin
  select * into c from public.conversations where organization_id=p_org and id=p_conversation;
  if not found or c.assigned_to_user_id is not null or c.status not in('open','pending','claimed','ai_handling') then return;end if;
+ if exists(select 1 from public.channel_sessions where organization_id=p_org and id=c.channel_session_id and provider='mirror') then return;end if;
  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
  values(p_org,'conversation.routing_requested','conversation',c.id,
   jsonb_build_object('organization_id',p_org,'conversation_id',c.id,'channel_session_id',c.channel_session_id))
@@ -36403,6 +36410,50 @@ comment on column public.channel_sessions.datafy_token_encrypted is
   'Token do Datafy (sk_live_…), cifrado por fn_encrypt_oauth. Nunca volta à tela depois de gravado.';
 
 -- ---- fim canal de WhatsApp Datafy (migration 0387) ----
+
+-- ---- Espelho da Inbox somente leitura (migration 0392, renumerada de 0261) ----
+create table if not exists public.channel_mirrors (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ name text not null, company_id uuid not null,
+ token_hash text not null unique check (token_hash ~ '^[a-f0-9]{64}$'),
+ enabled boolean not null default true,
+ last_received_at timestamptz, last_error_code text,
+ created_at timestamptz not null default now(),
+ unique (organization_id,id)
+);
+create unique index if not exists channel_sessions_org_id_mirror_key on public.channel_sessions(organization_id,id);
+create table if not exists public.channel_mirror_sessions (
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ mirror_id uuid not null,
+ channel_session_id uuid not null unique,
+ primary key (mirror_id,channel_session_id),
+ foreign key (organization_id,mirror_id) references public.channel_mirrors(organization_id,id) on delete cascade,
+ foreign key (organization_id,channel_session_id) references public.channel_sessions(organization_id,id) on delete cascade
+);
+alter table public.channel_mirrors enable row level security;
+alter table public.channel_mirror_sessions enable row level security;
+-- Secrets never go to browser queries. Configuration is through the admin route.
+revoke all on public.channel_mirrors, public.channel_mirror_sessions from public,anon,authenticated;
+grant all on public.channel_mirrors, public.channel_mirror_sessions to service_role;
+
+create or replace function public.fn_guard_mirror_message() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+ if exists(select 1 from public.channel_sessions where id=new.channel_session_id and organization_id=new.organization_id and provider='mirror')
+    and new.sent_via <> 'external_device' then
+   raise exception 'channel_read_only' using errcode='42501';
+ end if;
+ return new;
+end; $$;
+revoke execute on function public.fn_guard_mirror_message() from public,anon,authenticated;
+grant execute on function public.fn_guard_mirror_message() to service_role;
+drop trigger if exists trg_guard_mirror_message on public.messages;
+create trigger trg_guard_mirror_message before insert or update on public.messages
+ for each row execute function public.fn_guard_mirror_message();
+
+revoke execute on function public.fn_emit_message_event() from public,anon;
+grant execute on function public.fn_emit_message_event() to authenticated,service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

@@ -18,6 +18,7 @@ const base: CardInput = {
   hoursInStage: 5,
   isCooling: false,
   tags: [],
+  contactTags: [],
 };
 
 describe("resolveCardState — precedência estrita", () => {

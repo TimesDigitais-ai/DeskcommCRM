@@ -124,6 +124,13 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
     agenda: "nenhum",
     nota: "traduz o campo para a timeline do dossiê; não escreve.",
   },
+  "cancel.ts": {
+    agenda: "nenhum",
+    nota:
+      "A única menção é `next_eval_at: null` no cancelamento manual de um enrollment (extraído de " +
+      "POST .../enrollments/[id]/cancel) — mesmo caso do gatilho-caso.ts: desagendar não é agendar, " +
+      "e `null` não tem relógio para escolher errado.",
+  },
 };
 
 function modulosQueMencionam(): string[] {

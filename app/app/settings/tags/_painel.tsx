@@ -52,6 +52,7 @@ import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { invalidarCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { cn } from "@/lib/utils";
 import { PALETA_DE_ETIQUETAS } from "@/lib/tags/cor-da-etiqueta";
+import { estaTravada } from "@/lib/tags/travadas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import type { AcaoDeVocabulario, LinhaDeVocabulario } from "@/lib/schemas/tags";
@@ -100,9 +101,124 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   unauthenticated: "Sua sessão expirou. Entre de novo.",
   mfa_required: "Confirme o segundo fator para mudar as etiquetas.",
   forbidden_tenant: "Você não está em nenhuma organização ativa.",
+  tag_travada: "Esta etiqueta é aplicada automaticamente e só pode mudar de cor.",
 };
 
-export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idioma: Idioma }) {
+/**
+ * FORK — cadastrar uma etiqueta nova (nome + cor) sem esperar que
+ * alguém a digite num contato.
+ *
+ * O vocabulário do upstream só cresce por uso: a etiqueta aparece na lista
+ * depois de digitada num contato, num lead ou numa regra de agente. Aqui o time
+ * usa um SELETOR (escolher na lista, não digitar), então precisa de um jeito de
+ * cadastrar a etiqueta ANTES do primeiro uso. O caminho é o que o banco já
+ * oferece: `definir_cor` numa etiqueta que ainda não está no vocabulário curado
+ * cria a entrada `{tag, cor}` (migration 0336) — sem função nova, sem migration.
+ */
+function NovaEtiqueta({ idioma }: { idioma: Idioma }) {
+  const t = (texto: string) => traduzir(texto, idioma);
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [cor, setCor] = useState<string>(PALETA_DE_ETIQUETAS[0]!);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function criar() {
+    const tag = nome.trim();
+    if (!tag) return;
+    setOcupado(true);
+    try {
+      const resposta = await fetch("/api/v1/tags/vocabulario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "definir_cor", tag, cor }),
+      });
+      const corpo = (await resposta.json().catch(() => null)) as { error?: { code?: string } } | null;
+      if (!resposta.ok) {
+        const codigo = corpo?.error?.code ?? "internal_error";
+        toast.error(t(ERRO_EM_PORTUGUES[codigo] ?? "Não foi possível concluir agora. Tente de novo."));
+        return;
+      }
+      invalidarCoresDasEtiquetas(queryClient);
+      // O seletor do lead lê a lista pelo cache `oferta-de-etiquetas`.
+      void queryClient.invalidateQueries({ queryKey: ["oferta-de-etiquetas"] });
+      toast.success(t("Etiqueta cadastrada."));
+      setNome("");
+      setAberto(false);
+      router.refresh();
+    } catch {
+      toast.error(
+        t("Não foi possível falar com o servidor. Recarregue a página e confira antes de tentar de novo."),
+      );
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  // Fechado por padrão: a fileira de tons daqui repetiria os nomes acessíveis da
+  // fileira da ação "Cor" (mesma paleta), e o formulário só é útil a quem vai
+  // cadastrar — o resto da tela continua exatamente a do upstream.
+  if (!aberto) {
+    return (
+      <div>
+        <Button variant="outline" size="sm" onClick={() => setAberto(true)}>
+          {t("Nova etiqueta")}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Card className="flex flex-col gap-3 p-4">
+      <Label htmlFor="nome-da-etiqueta-nova">{t("Nova etiqueta")}</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id="nome-da-etiqueta-nova"
+          value={nome}
+          onChange={(evento) => setNome(evento.target.value)}
+          maxLength={60}
+          placeholder={t("Nome da etiqueta")}
+          className="max-w-xs"
+        />
+        {PALETA_DE_ETIQUETAS.map((tom) => (
+          <button
+            key={tom}
+            type="button"
+            onClick={() => setCor(tom)}
+            aria-pressed={cor === tom}
+            aria-label={t(NOME_DO_TOM[tom] ?? tom)}
+            title={tom}
+            className={cn(
+              "size-6 rounded-full border-2 transition-transform",
+              cor === tom
+                ? "border-foreground ring-2 ring-ring ring-offset-1 ring-offset-background"
+                : "border-transparent hover:scale-110",
+            )}
+            style={{ backgroundColor: tom }}
+          />
+        ))}
+        <Button onClick={criar} disabled={ocupado || nome.trim().length === 0}>
+          {ocupado ? t("Aplicando...") : t("Cadastrar")}
+        </Button>
+        <Button variant="ghost" onClick={() => setAberto(false)} disabled={ocupado}>
+          {t("Cancelar")}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+export function PainelDeTags({
+  tags,
+  travadas = [],
+  idioma,
+}: {
+  tags: LinhaDeVocabulario[];
+  /** FORK: nomes travados (automáticos) — só a cor muda. `lib/tags/travadas.ts`. */
+  travadas?: readonly string[];
+  idioma: Idioma;
+}) {
   const t = (texto: string) => traduzir(texto, idioma);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -153,6 +269,9 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
         return;
       }
       const dados = corpo?.data ?? {};
+      // FORK: o seletor do lead lê a lista pelo cache `oferta-de-etiquetas`;
+      // renomear/juntar/excluir/cor mudam o que ele oferece.
+      void queryClient.invalidateQueries({ queryKey: ["oferta-de-etiquetas"] });
       if (acao === "definir_cor") {
         // Escrever a cor é o ÚNICO caso em que esta tela muda o que outra tela
         // mostra: o chip da lista de conversas, o funil e os filtros leem o mapa
@@ -192,16 +311,20 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
 
   if (tags.length === 0) {
     return (
-      <Card className="p-6 text-sm text-muted-foreground">
-        {t(
-          "Nenhuma etiqueta nesta organização ainda. Elas aparecem aqui conforme os agentes, o Inbox e o funil usarem.",
-        )}
-      </Card>
+      <div className="flex flex-col gap-4">
+        <NovaEtiqueta idioma={idioma} />
+        <Card className="p-6 text-sm text-muted-foreground">
+          {t(
+            "Nenhuma etiqueta nesta organização ainda. Elas aparecem aqui conforme os agentes, o Inbox e o funil usarem.",
+          )}
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <NovaEtiqueta idioma={idioma} />
       <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <caption className="sr-only">{t("Etiquetas da organização e onde são usadas")}</caption>
@@ -224,6 +347,17 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
                       devolveu seria a tela discordando de si mesma por alguns
                       segundos. */}
                   <ChipDeEtiqueta tag={linha.tag} cor={linha.cor} />
+                  {estaTravada(linha.tag, travadas) && (
+                    // Travada: o agente escreve este nome exato (o contrato com o
+                    // agente). A tela só deixa mudar a cor — os três botões abaixo
+                    // nem aparecem, e o servidor recusa o resto (`tag_travada`).
+                    <span
+                      data-etiqueta-travada={linha.tag}
+                      className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                    >
+                      {t("automática — só a cor muda")}
+                    </span>
+                  )}
                   {!linha.no_vocabulario && (
                     // Em uso e fora do vocabulário curado: existe em algum
                     // registro sem passar por nenhuma tela de cadastro. Dar cor
@@ -248,15 +382,19 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
                   <Button size="sm" variant="outline" onClick={() => abrir(linha, "definir_cor")}>
                     {t("Cor")}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
-                    {t("Renomear")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
-                    {t("Juntar")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
-                    {t("Excluir")}
-                  </Button>
+                  {!estaTravada(linha.tag, travadas) && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
+                        {t("Renomear")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
+                        {t("Juntar")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
+                        {t("Excluir")}
+                      </Button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

@@ -15,6 +15,12 @@ import { comandoDaConversa, esperaDaConversa } from "@/lib/inbox/comando-da-conv
 import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import {
+  etiquetasDaLista,
+  limparNegritoDoWhatsapp,
+  nomeCurtoDoAtendente,
+  sessaoDoEspelho,
+} from "@/lib/inbox/lista-de-conversas";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
 interface Props {
@@ -135,10 +141,15 @@ export function ConversationListItem({
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
   const phoneFallback = c?.phone_number ? phoneForDisplay(c.phone_number) : "??";
-  const tags = c?.tags ?? [];
+  // Duplicata de caixa some ("Renovação" e "renovação" são a mesma etiqueta) e
+  // a etiqueta de importação também — ela está em toda conversa do espelho e só
+  // faz ruído na lista. O resto segue a ordem em que foi gravado.
+  const tags = etiquetasDaLista(c?.tags);
   const visibleTags = tags.slice(0, 2);
   const overflow = tags.length - visibleTags.length;
-  const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
+  const preview = limparNegritoDoWhatsapp(
+    conversation.last_message_preview?.trim() || t("Sem mensagens"),
+  );
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const naFila = queuePosition !== undefined;
   /**
@@ -192,8 +203,13 @@ export function ConversationListItem({
   const canal = conversation.channel_sessions ?? null;
   const rotuloCanal = canal?.phone_number ?? canal?.display_name ?? null;
 
+  // Setor e atendente que o espelho anotou (só conversa do espelho tem). É o que
+  // o Attemics mostra e a lista do CRM não mostrava; não é a atribuição do CRM.
+  const sessao = sessaoDoEspelho(conversation.metadata);
+
   const temSelos =
     visibleTags.length > 0 ||
+    sessao != null ||
     (mostrarAtendente && comando.quem === "humano") ||
     (mostrarCanal && rotuloCanal != null) ||
     Boolean(c?.is_blocked) ||
@@ -207,7 +223,11 @@ export function ConversationListItem({
       className={cn(
         "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
         "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
-        isSelected && "bg-accent-50 hover:bg-accent-50",
+        // `accent-soft` e não `accent-50`: no tema escuro `accent-50` continua
+        // quase branco (a escala não inverte), e o nome da conversa selecionada
+        // — texto claro — sumia em cima dele. `accent-soft` é o fundo que cada
+        // tema já define para "selecionado".
+        isSelected && "bg-accent-soft hover:bg-accent-soft",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
@@ -303,6 +323,23 @@ export function ConversationListItem({
             ))}
             {overflow > 0 && (
               <span className="text-[10px] text-text-muted">+{overflow}</span>
+            )}
+            {sessao?.setor && (
+              <Badge
+                variant="outline"
+                className="h-4 px-1.5 text-[10px] font-normal text-text-muted"
+                title={t("Setor na plataforma de origem")}
+              >
+                {sessao.setor}
+              </Badge>
+            )}
+            {sessao?.atendente && (
+              <span
+                className="max-w-[9rem] truncate text-[10px] text-text-muted"
+                title={`${t("Atendente na plataforma de origem")}: ${sessao.atendente}`}
+              >
+                {nomeCurtoDoAtendente(sessao.atendente)}
+              </span>
             )}
             {mostrarAtendente && comando.quem === "humano" && (
               <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />

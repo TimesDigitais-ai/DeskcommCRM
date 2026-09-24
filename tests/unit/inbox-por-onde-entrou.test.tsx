@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
@@ -35,14 +36,17 @@ const base = {
 const comCanal = (canal: { phone_number: string | null; display_name: string | null } | null) =>
   ({ ...base, channel_sessions: canal }) as ConversationWithContact;
 
+// A linha lê o catálogo de etiquetas (react-query), então precisa do provider.
 const pintar = (conv: ConversationWithContact, mostrarCanal: boolean) =>
   render(
-    <ConversationListItem
-      conversation={conv}
-      isSelected={false}
-      onSelect={() => {}}
-      mostrarCanal={mostrarCanal}
-    />,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <ConversationListItem
+        conversation={conv}
+        isSelected={false}
+        onSelect={() => {}}
+        mostrarCanal={mostrarCanal}
+      />
+    </QueryClientProvider>,
   );
 
 describe("mostra o número da empresa quando há mais de um canal", () => {

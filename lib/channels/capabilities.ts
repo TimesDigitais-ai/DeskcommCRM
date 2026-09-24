@@ -15,9 +15,13 @@ export type { ChannelProvider, ChannelCapabilities, ProviderDeMensagem };
  * `ProviderDeMensagem`, não `ChannelProvider`. Perguntar a uma linha de voz se
  * ela manda texto fora da janela de 24h é erro de categoria, e responder
  * qualquer coisa (inclusive tudo `false`) faria a pergunta parecer legítima.
+ * O espelho entra apenas para renderizar a conversa existente; sua saída é
+ * bloqueada pelo adapter, handler e banco. Não entra em PROVIDERS_DE_MENSAGEM.
  * `capabilitiesOf` segue falhando fechado para quem não está aqui.
  */
-export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilities> = {
+export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem | "mirror", ChannelCapabilities> = {
+  mirror: { freeformOutsideWindow: true, requiresTemplates: false, canManageTemplates: false,
+    banRisk: false, minIntervalMs: null, voiceNote: "opus-only", groups: "none", costPerMessage: false },
   // Auto-restrição: falo quando quiser, mas o WhatsApp me bane se eu abusar.
   waha: {
     freeformOutsideWindow: true,
@@ -187,7 +191,7 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  * hora de escolher por onde mandar recado, o desconhecido é tão inútil quanto a
  * voz. Aqui a pergunta é outra.
  */
-export const PROVIDERS_SEM_MENSAGEM = ["wacalls"] as const;
+export const PROVIDERS_SEM_MENSAGEM = ["wacalls", "mirror"] as const;
 
 /**
  * Erro de COMPILAÇÃO enquanto sobrar provider fora das duas listas. Provider

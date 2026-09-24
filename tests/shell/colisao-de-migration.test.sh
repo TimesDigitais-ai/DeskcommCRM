@@ -571,6 +571,23 @@ assert_exit "$code" 0 "o renumerado passa"
 assert_not_contains "$saida" "NNNN=0291" "o 0290 do retrato ANCESTRAL não sobe o próximo livre"
 assert_not_contains "$saida" "refs/heads/retrato-antigo" "e o retrato ancestral não vira 'quem tem'"
 
+echo "32. renumerar a migration da base enquanto o merge traz OUTRA com o número antigo passa (reconciliação de fork)"
+# O caso do fork que mescla o upstream: o upstream tem `0261_novo`, o fork tinha `0261_anterior`
+# e a moveu para `0290`. Na árvore resultante o 0261 é UM só. O gate lia o número na árvore da
+# base, achava-o "tomado" pelo arquivo que o próprio PR renumerou e reprovava.
+c="$TMP/c32"; clonar "$c"; git -C "$c" switch -q -c chore/reconcilia
+git -C "$c" mv "supabase/migrations/20260102090000_0261_anterior.sql" "supabase/migrations/20260918010000_0290_anterior.sql"
+migrar "$c" "20260915170000_0261_novo.sql"; commit "$c" "0261_anterior vira 0290; entra a 0261_novo do upstream"
+saida="$(gate "$c")"; code=$?
+assert_exit "$code" 0 "renumerar a da base libera o número para a nova"
+assert_not_contains "$saida" "já existe em" "e nenhuma colisão é apontada"
+# CONTROLE: sem o renome, o MESMO 0261 novo continua reprovando — a exceção é só do renome.
+c="$TMP/c32b"; clonar "$c"; git -C "$c" switch -q -c chore/reconcilia
+migrar "$c" "20260915170000_0261_novo.sql"; commit "$c" "só a 0261_novo, sem renumerar a da base"
+saida="$(gate "$c")"; code=$?
+assert_exit "$code" 1 "controle: sem renumerar a da base, o número tomado reprova"
+assert_contains "$saida" "NNNN=0261" "e a mensagem nomeia o número"
+
 echo
 if [ "$falhas" = 0 ]; then echo "colisao-de-migration: $casos casos, todos verdes"; exit 0
 else echo "colisao-de-migration: $falhas de $casos casos vermelhos"; exit 1; fi

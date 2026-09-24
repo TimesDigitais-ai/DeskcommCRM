@@ -75,6 +75,8 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "channel_mirrors", razao: "tests/invariants/mirror-ingest.test.ts — leitura/escrita anon e authenticated negadas; handler isola duas organizações reais e rejeita empresa de origem incompatível" },
+  { tabela: "channel_mirror_sessions", razao: "tests/invariants/mirror-ingest.test.ts — leitura/escrita anon e authenticated negadas; FK composta recusa vínculo entre duas organizações reais" },
   { tabela: "prospecting_settings", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_campaigns", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_candidates", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },

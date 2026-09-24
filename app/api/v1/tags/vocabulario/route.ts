@@ -41,6 +41,7 @@ import { mfaEmDivida } from "@/lib/auth/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { vocabularioDeTagsSchema, type LinhaDeVocabulario } from "@/lib/schemas/tags";
 import { createClient } from "@/lib/supabase/server";
+import { operacaoBloqueada, travadasDoSettings } from "@/lib/tags/travadas";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,32 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { acao, tag, destino, cor } = parsed.data;
 
   const db = await createClient();
+
+  // ── FORK: etiqueta TRAVADA (automática) só muda de cor ────────────
+  // O vocabulário do upstream não conhece o conceito: as sete etiquetas que o
+  // agente aplica (`lib/tags/travadas.ts`) têm o nome exato como contrato com o
+  // agente, e renomear/juntar/excluir uma delas na tela quebra a cadência em
+  // silêncio. A lista mora em `organizations.settings.tags_travadas` (uma chave
+  // irmã de `settings.tags`, que a função de banco NÃO reescreve) e o bloqueio é
+  // AQUI, antes da RPC — sem tocar nas migrations 0264/0336 do upstream. É trilho
+  // contra o clique errado, não fronteira de segurança: quem chama a RPC direto
+  // do navegador passa (a função é do upstream). O porquê inteiro: travadas.ts.
+  if (acao !== "definir_cor") {
+    const { data: org } = await db
+      .from("organizations")
+      .select("settings")
+      .eq("id", auth.org.orgId)
+      .maybeSingle();
+    if (operacaoBloqueada({ acao, tag, destino }, travadasDoSettings(org?.settings ?? null))) {
+      return fail(
+        "tag_travada",
+        "Esta etiqueta é aplicada automaticamente e só pode mudar de cor.",
+        422,
+        { requestId },
+      );
+    }
+  }
+
   // Uma chamada só. Renomear a etiqueta e trocar o nome nas regras `add_tag` dos
   // agentes acontece na MESMA transação — é isto que impede o estado que a issue
   // descreve: contato renomeado com o agente ainda escrevendo o nome antigo.

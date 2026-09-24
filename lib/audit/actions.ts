@@ -239,6 +239,9 @@ export const AUDIT_ACTIONS = [
   // `lib/channels/reactivate.ts` — o único caminho de volta, e é o que faz a
   // frase acima valer para os DOIS casos em vez de para o que lembraram.
   "channel.reactivated",
+  "channel.mirror_created",
+  "channel.mirror_updated",
+  "channel.mirror_received",
   // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
   // dispositivo vinculado, opt-in por org. Admin only.
   //

@@ -127,6 +127,17 @@ jobs:
   # `--shard` corta por contagem, e o terço de cada um só se sabe rodando. O
   # custo é um job a mais por rodada na fila de runners (~25 s de preâmbulo), NÃO
   # MEDIDO quanto à espera.
+  # A QUARTA PARTE ENTROU NO FORK EM 24/09/2026 (reconciliação com o upstream
+  # v1.44.0). O fork acrescenta testes próprios (espelho, etiquetas, gate de
+  # colisão) e o `--shard` corta por CONTAGEM de arquivos, então as três partes
+  # ficaram desiguais. Medido no PR #12, `ubuntu-latest`, Unit tests: parte 1
+  # 9,9 min, parte 2 6,6 min, parte 3 11,6 min — e a parte 3, com cercas (1,3) e
+  # kit bash (1,3), fechou em 14m46 contra o orçamento de 12 (a primeira tentativa
+  # foi cortada pelo teto de 15 no kit bash). Sem passo de arquivo inteiro para
+  # mover que resolvesse (a 3 sozinha já passava de 11 só de unit), o conserto é o
+  # que este bloco prevê: mais uma parte. Os passos fixos ficam onde estavam; a
+  # parte 4 só roda a sua fatia. PREVISÃO, não medição: ~28 min de unit / 4 ≈
+  # 7 min por parte. Recalibrar depois de medir a distribuição nova.
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -142,7 +153,7 @@ jobs:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3]
+        parte: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
 
@@ -182,7 +193,13 @@ jobs:
             echo "::warning::não consegui comparar a base da prévia com a ${GITHUB_BASE_REF:-main} — NÃO MEDIDO"; exit 0; }
           atraso=$(printf '%s' "$comp" | jq -r '.ahead_by // 0')
           printf '%s' "$comp" | jq -r '.files[]?.filename' | sort -u > /tmp/main-andou.txt
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[].filename' 2>/dev/null | sort -u > /tmp/pr-toca.txt
+          # `|| true`: o passo "nunca reprova" (ver acima), mas a listagem de arquivos do PR
+          # é recusada pela API acima de 3000 arquivos (HTTP 422) — e com `bash -e` +
+          # `pipefail` isso derrubava o job inteiro, PULANDO typecheck/lint/testes. Medido no PR
+          # de reconciliação do fork com o upstream (milhares de arquivos): o passo saía 1 sem
+          # imprimir nada. Sem a lista, o cruzamento fica vazio e o aviso de truncamento
+          # abaixo declara o NÃO MEDIDO.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[].filename' 2>/dev/null | sort -u > /tmp/pr-toca.txt || true
           cruzamento=$(comm -12 /tmp/main-andou.txt /tmp/pr-toca.txt)
           n=$(printf '%s' "$cruzamento" | grep -c . || true)
           {
@@ -209,7 +226,7 @@ jobs:
           # A lista de arquivos da comparação vem truncada acima de 300 arquivos
           # (limite da API): cruzamento vazio num intervalo enorme é NÃO MEDIDO,
           # não "não houve".
-          if [ "$atraso" -gt 250 ]; then
+          if [ "$atraso" -gt 250 ] || [ ! -s /tmp/pr-toca.txt ]; then
             echo "::warning::a comparação pode ter vindo truncada (${atraso} commits) — cruzamento vazio aqui é NÃO MEDIDO"
           fi
 
@@ -229,9 +246,16 @@ jobs:
         if: matrix.parte == 3
         run: pnpm cercas
 
+      # NODE_OPTIONS explícito: o `tsc` deste projeto passou a estourar o teto
+      # padrão de heap do V8 (~2GB) depois que a atualização de 1.20.0 para
+      # 1.27.1 trouxe centenas de arquivos novos — medido: "JavaScript heap
+      # out of memory" / "Aborted (core dumped)" no runner `ubuntu-latest`
+      # (7GB de RAM). 6144MB dá folga sem chegar perto do teto da máquina.
       - name: Typecheck
         if: matrix.parte == 1
         run: pnpm typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
       # Na parte 2, não na 1: o porquê e a conta estão no cabeçalho do job.
       - name: Lint
@@ -321,8 +345,8 @@ jobs:
       # rodaram acima; `--shard` divide os arquivos entre as três partes. Juntos
       # são a suíte inteira, uma vez só. Localmente o comando continua sendo
       # `pnpm test:unit`, sem recorte.
-      - name: Unit tests (parte ${{ matrix.parte }}/3)
-        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/3
+      - name: Unit tests (parte ${{ matrix.parte }}/4)
+        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/4
 
       # O ACERVO DE `.changes/` CABE NA TELA DA VPS? — e por que fora de PR.
       #
@@ -437,11 +461,11 @@ jobs:
             exit 0
           fi
           decorrido=$(( ($(date +%s) - VERIFY_INICIO) / 60 ))
-          echo "verify parte ${{ matrix.parte }}/3: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
+          echo "verify parte ${{ matrix.parte }}/4: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
           if [ "$decorrido" -le "${ORCAMENTO_MIN}" ]; then
             exit 0
           fi
-          echo "::error::A parte ${{ matrix.parte }}/3 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
+          echo "::error::A parte ${{ matrix.parte }}/4 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
           echo "::error::Isto NÃO é defeito do seu PR: a suíte unitária cresceu. Em 18/09/2026, \`Unit tests\` já era 10,3 dos 13,2 min do job."
           echo "::error::O conserto é mais uma parte em \`verify-parte\` (matrix + --shard), não subir este número."
           exit 1

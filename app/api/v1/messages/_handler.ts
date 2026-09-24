@@ -1,3 +1,4 @@
+import { canalSomenteLeitura } from "@/lib/channels/mirror/policy";
 import { assertProspectingDelivery } from "@/lib/prospecting/guard";
 import { assertAgentOperationSupabase } from "@/lib/ai/agents/operation";
 import {
@@ -447,6 +448,9 @@ export async function sendMessageHandler(
     channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
   };
   const c = conv as unknown as Joined;
+  if (canalSomenteLeitura(c.channel_sessions?.provider)) {
+    throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Conversa espelhada: responda na plataforma de origem.");
+  }
 
   if (c.contacts?.is_blocked) {
     throw new ApiError(

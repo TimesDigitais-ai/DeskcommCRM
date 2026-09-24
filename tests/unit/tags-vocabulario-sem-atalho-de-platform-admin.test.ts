@@ -47,7 +47,14 @@ vi.mock("@/lib/auth/server", () => ({
   resolveActiveOrg: async () => ({ orgId: ORG, name: "Org", role: estado.papelDaMembresia }),
   mfaEmDivida: async () => false,
 }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc }) }));
+// `from` existe por causa do fork: a rota e a página leem `organizations.settings`
+// (`tags_travadas`, lib/tags/travadas.ts) além da RPC. Sem travadas = comportamento do upstream.
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({
+    rpc,
+    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+  }),
+}));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ refresh: vi.fn() }) }));

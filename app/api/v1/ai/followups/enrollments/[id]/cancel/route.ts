@@ -8,24 +8,22 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Promessas (`cron_jobs`) NÃO são canceláveis por aqui — fora de escopo desta
  *   task; só enrollments do motor.
+ *
+ * Regra extraída para `lib/followup/cancel.ts` — a mesma função também serve
+ * a ferramenta MCP `crm_cancel_followup_flow`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { logger } from "@/lib/logger";
+import { cancelFollowupEnrollment } from "@/lib/followup/cancel";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// `paused_manual` (0145) é cancelável: quem pausou tem o direito de desistir sem
-// ter de retomar antes só para poder encerrar — retomar reagendaria o próximo
-// passo, e entre o retomar e o cancelar o motor poderia mandar a mensagem.
-const LIVE_STATUSES = ["active", "waiting_reply", "paused_handoff", "paused_manual"];
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -45,59 +43,21 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const { user, org: activeOrg } = authz;
 
   const supabase = await createClient();
-  const { data: existing, error: fetchErr } = await supabase
-    .from("followup_enrollments")
-    .select("id, status, current_node_id")
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", t("Enrollment não encontrado."), 404, { requestId });
-
-  if (!LIVE_STATUSES.includes(existing.status)) {
-    return fail("already_terminal", t("Enrollment já está encerrado."), 409, { requestId });
-  }
-
-  const { data: updated, error: updErr } = await supabase
-    .from("followup_enrollments")
-    .update({
-      status: "cancelled",
-      cancel_reason: "manual",
-      next_eval_at: null,
-      outcome: null,
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
-    .select("id, status, cancel_reason, updated_at")
-    .single();
-  if (updErr || !updated) {
-    return fail("internal_error", updErr?.message ?? "followup_enrollment_cancel_failed", 500, {
-      requestId,
-    });
-  }
-
-  const { error: eventErr } = await supabase.from("followup_enrollment_events").insert({
-    organization_id: activeOrg.orgId,
-    enrollment_id: id,
-    node_id: existing.current_node_id,
-    event_type: "cancelled_manual",
-    payload: { actor_user_id: user.id },
-  });
-  if (eventErr) {
-    logger.error("[followup.enrollment.cancel] event insert failed", { error: eventErr.message, requestId });
-  }
-
-  void audit({
-    action: "followup_enrollment.cancelled",
-    actorUserId: user.id,
+  const resultado = await cancelFollowupEnrollment(supabase, {
     organizationId: activeOrg.orgId,
-    resourceType: "followup_enrollment",
-    resourceId: id,
+    enrollmentId: id,
+    actorUserId: user.id,
     requestId,
-    metadata: { previous_status: existing.status },
   });
 
-  return ok(updated, { requestId });
+  if (!resultado.ok) {
+    return fail(
+      resultado.code,
+      resultado.code === "not_found" ? t("Enrollment não encontrado.") : t("Enrollment já está encerrado."),
+      resultado.status,
+      { requestId },
+    );
+  }
+
+  return ok(resultado.enrollment, { requestId });
 }

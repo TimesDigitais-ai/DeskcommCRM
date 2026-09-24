@@ -14,4 +14,5 @@ export * from "./team";
 export * from "./onboarding";
 export * from "./messaging";
 export * from "./routing";
+export * from "./tags";
 export * from "./webhooks";

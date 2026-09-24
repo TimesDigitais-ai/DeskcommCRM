@@ -12,6 +12,7 @@
  * a garantia é do CHECK, não de otimismo.
  */
 export type ChannelSessionRef =
+  | { provider: "mirror" }
   | { provider: "waha"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
   | { provider: "zernio" | "zernio_social"; zernio_account_id: string }
@@ -27,6 +28,7 @@ export const CHANNEL_SESSION_REF_COLUMNS =
 
 export function resolveSessionRef(session: ChannelSessionRef): string {
   switch (session.provider) {
+    case "mirror": throw new Error("channel_read_only");
     case "meta_cloud":
       return session.meta_phone_number_id;
     // O `phone_number_id` da WABA, como no canal oficial — mas pela coluna do
@@ -42,4 +44,16 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     case "zernio":
       return session.zernio_account_id;
   }
+}
+
+/**
+ * O ref para BAIXAR mídia de entrada. Igual a `resolveSessionRef`, exceto no
+ * espelho: ele não tem ref de provider (a coluna é nula e `resolveSessionRef`
+ * recusa de propósito, porque ninguém deve endereçar um envio por ele), e a URL
+ * do anexo é autocontida — o adapter dele não usa o ref. Sem esta exceção o
+ * worker de persistência e a rota de mídia lançariam `channel_read_only` antes
+ * de chegar ao adapter (worker em retry até dead-letter; rota em 502).
+ */
+export function resolveSessionRefDeMidia(session: ChannelSessionRef): string {
+  return session.provider === "mirror" ? "mirror" : resolveSessionRef(session);
 }

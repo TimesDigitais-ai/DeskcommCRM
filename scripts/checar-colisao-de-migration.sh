@@ -158,6 +158,21 @@ adicionadas_nomes="$(xargs -n1 basename <<<"$adicionadas" | sed '/^$/d')"
 base_arvore="$(git ls-tree -r --name-only "$BASE" -- supabase/migrations 2>/dev/null | sed 's#^supabase/migrations/##' || true)"
 head_arvore="$(git ls-tree -r --name-only HEAD -- supabase/migrations 2>/dev/null | sed 's#^supabase/migrations/##' || true)"
 
+# Migration da BASE que este PR RENUMERA (renome `R` pelo -M) sai da conta de "número
+# tomado": na árvore resultante o número dela está livre, e é justamente o que o PR fez de
+# propósito. É o caso do fork que reconcilia com o upstream (merge que traz OUTRA migration
+# com o número que já era de uma migration do fork): o fork move a dele para um número livre
+# e o número antigo passa a ser do que veio. Sem isto, o gate lia a base inteira, achava o
+# número "tomado" pelo arquivo que o próprio PR acabou de tirar do lugar e reprovava um PR
+# que deixa a árvore sem duplicata. Só o RENOME entra aqui — apagar migration não libera
+# número (migration já aplicada não se apaga) — e a duplicata dentro da árvore resultante
+# segue vigiada pelo passo "A árvore da main tem NNNN ou timestamp repetido?" do ci.yml.
+renomeadas_da_base="$(git diff --name-status -M "$BASE" HEAD -- supabase/migrations/ 2>/dev/null \
+  | awk '$1 ~ /^R/ { print $2 }' | sed 's#^supabase/migrations/##' || true)"
+if [ -n "$renomeadas_da_base" ]; then
+  base_arvore="$(grep -vxF -f <(printf '%s\n' "$renomeadas_da_base") <<<"$base_arvore" || true)"
+fi
+
 # ── as outras refs da máquina (issue #1155) ────────────────────────────────────────────
 base_commit="$(git rev-parse "$BASE^{commit}" 2>/dev/null || true)"
 head_commit="$(git rev-parse HEAD^{commit} 2>/dev/null || true)"

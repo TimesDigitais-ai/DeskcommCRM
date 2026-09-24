@@ -5,6 +5,10 @@ CLI utilities pra operação local e de produção.
 ## Lista
 
 - `seed-tenant.ts` — Cria um tenant manualmente (modo BPO). Placeholder; implementação na Spec 01.
+- [`mirror-probe/`](mirror-probe/README.md) — sonda temporária e isolada para conferir
+  o contrato de eventos do agente antes do espelho da Inbox. Não envia
+  mensagens nem tem acesso ao banco do CRM. Exceção operacional em Python stdlib:
+  roda numa imagem já disponível na VPS, sem reconstruir ou reiniciar o app.
 
 ## Convenções
 

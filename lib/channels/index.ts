@@ -2,6 +2,7 @@
  * A porta de entrada do seam. Feature nenhuma importa `lib/waha/*` direto —
  * pede o adapter do provider da conversa e o descritor de capabilities.
  */
+import { mirrorAdapter } from "./mirror/adapter";
 import { datafyAdapter } from "./adapters/datafy";
 import { metaCloudAdapter } from "./adapters/meta-cloud";
 import { wahaAdapter } from "./adapters/waha";
@@ -13,7 +14,8 @@ import type { ChannelAdapter, ChannelProvider, ProviderDeMensagem } from "./type
  * Um adapter por provider de MENSAGEM. `wacalls` não entra: ele não endereça
  * destinatário nem envia envelope — ver `ProviderDeMensagem` em `./types`.
  */
-const ADAPTERS: Record<ProviderDeMensagem, ChannelAdapter | null> = {
+const ADAPTERS: Record<ProviderDeMensagem | "mirror", ChannelAdapter | null> = {
+  mirror: mirrorAdapter,
   waha: wahaAdapter,
   meta_cloud: metaCloudAdapter,
   zernio: zernioAdapter,
@@ -40,7 +42,7 @@ export {
   canalConhecidoSemMensagem,
   transportaMensagem,
 } from "./capabilities";
-export { CHANNEL_SESSION_REF_COLUMNS, resolveSessionRef } from "./session-ref";
+export { CHANNEL_SESSION_REF_COLUMNS, resolveSessionRef, resolveSessionRefDeMidia } from "./session-ref";
 export type { ChannelSessionRef } from "./session-ref";
 export type {
   ChannelAdapter,

@@ -55,10 +55,10 @@ export interface CardInput {
   /** Até três, e só as que existem: cota se preenche, e lastro inventado passa na constraint. */
   scoreFactors?: Array<{ pontos: number; frase: string; ancora?: { kind: string; id: string } }>;
   scoreReason?: string | null;
-  /** Uma tag canônica do pipeline vira ponto ao lado do título; o resto sai do card. */
-  canonicalTag?: string | null;
-  /** Todas as tags — fora do card, acessíveis no hover. */
+  /** Etiquetas do LEAD — as automáticas do agente (Follow-up, Régua…) moram aqui. */
   tags: string[];
+  /** Etiquetas do CONTATO — as que o time aplica. O card une as duas listas. */
+  contactTags: string[];
 }
 
 /**
@@ -74,6 +74,7 @@ export function buildCardInput(
     | "value_cents"
     | "currency"
     | "tags"
+    | "contact_tags"
     | "last_activity_at"
     | "created_at"
     | "owner_kind"
@@ -90,8 +91,6 @@ export function buildCardInput(
     coolingIds?: Set<string>;
     /** Propostas de retomada VIVAS, por lead — só as `pending` chegam aqui. */
     reactivations?: Map<string, { proposalId: string; expiresAt: string }>;
-    /** `crm_pipelines.settings.canonical_tags` — só a primeira que o lead tiver. */
-    canonicalTags?: string[];
     now?: Date;
   },
 ): CardInput {
@@ -126,8 +125,8 @@ export function buildCardInput(
     // "não tem" como estado normal, e um label em branco produziria o slot vazio
     // que o §5 proíbe (dado sem propósito ocupando linha).
     nextAction: lead.next_action ? { label: lead.next_action.label } : null,
-    canonicalTag: (opts.canonicalTags ?? []).find((t) => lead.tags.includes(t)) ?? null,
     tags: lead.tags,
+    contactTags: lead.contact_tags ?? [],
   };
 }
 

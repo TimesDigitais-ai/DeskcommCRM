@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { InboxMirrorClient } from "./InboxMirrorClient";
 import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
 import { CanalOficialClient } from "./CanalOficialClient";
@@ -58,19 +59,21 @@ export function ConexoesShell({
   const params = useSearchParams();
   const abaParam = params.get("aba");
   const aba =
-    abaParam === "sociais"
-      ? "sociais"
-      : abaParam === "oficial"
-      ? "oficial"
-      : abaParam === "parceiro"
-        ? "parceiro"
-        : abaParam === "telefonia"
-          ? "telefonia"
-          : abaParam === "voz"
-            ? "voz"
-            : abaParam === "graph" && graphParceiro
-              ? "graph"
-              : "numeros";
+    abaParam === "espelho"
+      ? "espelho"
+      : abaParam === "sociais"
+        ? "sociais"
+        : abaParam === "oficial"
+          ? "oficial"
+          : abaParam === "parceiro"
+            ? "parceiro"
+            : abaParam === "telefonia"
+              ? "telefonia"
+              : abaParam === "voz"
+                ? "voz"
+                : abaParam === "graph" && graphParceiro
+                  ? "graph"
+                  : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -86,6 +89,7 @@ export function ConexoesShell({
   return (
     <Tabs value={aba} onValueChange={(v) => irPara(v, sub)} className="flex flex-col gap-4">
       <TabsList className="h-auto max-w-full flex-wrap justify-start">
+        <TabsTrigger value="espelho">{t("Espelho da Inbox")}</TabsTrigger>
         {/* Rótulos pelo que o usuário RECONHECE, não pelo nome técnico do motor por
             trás: ele sabe se leu um QR ou se tem conta na Meta; a sigla do provedor
             não diz nada a quem instalou o sistema para vender.
@@ -162,6 +166,7 @@ export function ConexoesShell({
         </Tabs>
       </TabsContent>
 
+      <TabsContent value="espelho"><InboxMirrorClient /></TabsContent>
       <TabsContent value="oficial" className="mt-0">
         <Tabs value={sub} onValueChange={(v) => irPara("oficial", v)} className="flex flex-col gap-4">
           <TabsList>

@@ -572,7 +572,14 @@ export const crmProposeReactivation: McpToolDefinition<typeof reativacaoShape> =
 const inscreverShape = {
   contact_id: z.string().uuid(),
   /** O fluxo em que inscrever. `crm_list_followups` não lista fluxos; o operador escolhe na tela e o prompt traz o id. */
-  flow_id: z.string().uuid(),
+  flow_id: z.string().uuid().optional(),
+  /**
+   * APELIDO de `flow_id` (fork). A ferramenta do fork que existia antes
+   * desta chamava o mesmo id de `pointer_id` ("o ponteiro do fluxo publicado"), e
+   * o agente em produção ainda a chama assim. Aceitar os dois evita quebrar o
+   * agente sem exigir que ele mude o prompt no mesmo dia da atualização.
+   */
+  pointer_id: z.string().uuid().optional(),
 };
 
 /**
@@ -604,13 +611,23 @@ export const crmEnrollFollowupFlow: McpToolDefinition<typeof inscreverShape> = {
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    const fluxo = input.flow_id ?? input.pointer_id;
+    if (!fluxo) {
+      // Recusa de negócio vira RESPOSTA (regra do cabeçalho deste arquivo): o
+      // modelo aprende a mandar o id em vez de receber um erro genérico.
+      return {
+        inscrito: false,
+        motivo: "flow_id_obrigatorio",
+        mensagem: "informe o id do fluxo publicado em `flow_id` (ou `pointer_id`).",
+      };
+    }
     const { createAdminClient } = await import("@/lib/supabase/admin");
     const { enrollFollowupFlow } = await import("@/lib/followup/enroll");
 
     const a = actorAudit(ctx);
     const r = await enrollFollowupFlow(createAdminClient(), {
       organizationId: ctx.organizationId,
-      pointerId: input.flow_id,
+      pointerId: fluxo,
       contactId: input.contact_id,
       actorUserId: a.actorUserId,
       requestId: ctx.requestId,
@@ -637,7 +654,7 @@ export const crmEnrollFollowupFlow: McpToolDefinition<typeof inscreverShape> = {
       resourceType: "followup_enrollment",
       resourceId: enrollmentId,
       requestId: ctx.requestId,
-      metadata: { ...a.metadataActor, via: "mcp", flow_id: input.flow_id, contact_id: input.contact_id },
+      metadata: { ...a.metadataActor, via: "mcp", flow_id: fluxo, contact_id: input.contact_id },
     });
 
     return {

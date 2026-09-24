@@ -110,12 +110,6 @@ export function KanbanBoard({
     }
     return ids;
   }, [atRisk, pipelineId]);
-  // A tag canônica do pipeline é a ÚNICA que fica no card (como ponto de 6px);
-  // as outras saem para o hover. Já existe em settings — não inventa campo.
-  const canonicalTags = useMemo(() => {
-    const raw = (pipelineProp ?? queryResult.data?.pipeline)?.settings?.canonical_tags;
-    return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === "string") : [];
-  }, [pipelineProp, queryResult.data?.pipeline]);
 
   // O dossiê é do BOARD e não da página: ele precisa do lead inteiro e do nome
   // do estágio, que só existem aqui depois do agrupamento.
@@ -256,7 +250,6 @@ export function KanbanBoard({
             coolingIds={coolingIds}
             reactivations={reactivations}
             pulses={pulsesProp ?? queryResult.pulses}
-            canonicalTags={canonicalTags}
             selectedLeadIds={selectedLeadIds}
             onSelectMany={handleSelectMany}
             onOpen={setDossieId}

@@ -11,6 +11,9 @@ import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
 import { OwnerBadge } from "./OwnerBadge";
+import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
+import { useOfertaDeEtiquetas } from "@/hooks/tags/useOfertaDeEtiquetas";
+import { etiquetasDoCard, unirTags } from "@/lib/tags/etiquetas-do-card";
 import { ContatoNoCard } from "./ContatoNoCard";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
@@ -86,6 +89,9 @@ export function KanbanCard({
   const value = formatBRL(card.valueCents, card.currency);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
+  const { travadas } = useOfertaDeEtiquetas();
+  const etiquetas = etiquetasDoCard({ leadTags: card.tags, contatoTags: card.contactTags, travadas });
+  const todasAsTags = unirTags(card.tags, card.contactTags);
 
   // Clique ABRE o dossiê; ctrl/cmd+clique SELECIONA; shift+clique estende até a
   // âncora. "Clicar abre" é a convenção mais forte, e seleção múltipla é recurso
@@ -139,8 +145,8 @@ export function KanbanCard({
           role="group"
           aria-label={`${t("Lead")}: ${card.title}`}
           onClick={handleClick}
-          // Tags saem do card (Lei A): ficam a um hover, sem ocupar altura.
-          title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
+          // Todas as etiquetas (inclusive as que passam do "+N") a um hover.
+          title={todasAsTags.length > 0 ? `Etiquetas: ${todasAsTags.join(", ")}` : undefined}
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
             "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
@@ -205,15 +211,6 @@ export function KanbanCard({
                     : "opacity-0 group-hover:opacity-100",
                 )}
               />
-              {card.canonicalTag && (
-                <span
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                  title={card.canonicalTag}
-                  // role="img": um span nu não aceita aria-label (aria-prohibited-attr).
-                  role="img"
-                  aria-label={`${t("Tag")}: ${card.canonicalTag}`}
-                />
-              )}
               {/* O TÍTULO é o elemento ativável, não o card inteiro.
                   `role="group"` no card foi decisão da wave 2 (o dnd marca o
                   handle como button, e com o menu de ações dentro isso vira
@@ -241,6 +238,28 @@ export function KanbanCard({
             </div>
             <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
+
+          {/* Etiquetas — retângulos coloridos iguais aos do Atemix (pedido do
+              cliente, 17-20/09/2026): um pontinho de cor não identifica a
+              etapa de ninguém. Até 3 + "+N"; as automáticas do agente vêm
+              primeiro (dizem em que momento o cliente está). Linha de altura
+              fixa e sem quebra, então 3 etiquetas nunca esticam o card. Some
+              por inteiro quando não há nenhuma. */}
+          {etiquetas.visiveis.length > 0 && (
+            <div className="mt-1 flex h-5 items-center gap-1 overflow-hidden">
+              {etiquetas.visiveis.map((tag) => (
+                <ChipDeEtiqueta
+                  key={tag.trim().toLowerCase()}
+                  tag={tag}
+                  title={tag}
+                  className="h-[18px] min-w-0 shrink justify-start truncate rounded-md px-1.5 text-[10px] font-bold uppercase leading-none tracking-wide"
+                />
+              ))}
+              {etiquetas.extras > 0 && (
+                <span className="shrink-0 text-[10px] font-medium text-text-muted">+{etiquetas.extras}</span>
+              )}
+            </div>
+          )}
 
           {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
           <p

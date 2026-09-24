@@ -32,6 +32,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { LinhaDeVocabulario } from "@/lib/schemas/tags";
 import { createClient } from "@/lib/supabase/server";
+import { travadasDoSettings } from "@/lib/tags/travadas";
 
 import { PainelDeTags } from "./_painel";
 
@@ -65,6 +66,17 @@ export default async function TagsPage() {
     p_org: activeOrg.orgId,
   });
 
+  // FORK: quais etiquetas são travadas (automáticas — só mudam de cor).
+  // Leitura da mesma sessão (RLS de `organizations`); falha vira "nenhuma
+  // travada" só NA TELA — o servidor recusa a operação de qualquer jeito
+  // (`POST /api/v1/tags/vocabulario`), a tela é o aviso antecipado.
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  const travadas = travadasDoSettings(org?.settings ?? null);
+
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
@@ -86,7 +98,7 @@ export default async function TagsPage() {
           {t("Não foi possível carregar as etiquetas agora. Recarregue a página.")}
         </div>
       ) : (
-        <PainelDeTags tags={(data ?? []) as LinhaDeVocabulario[]} idioma={idioma} />
+        <PainelDeTags tags={(data ?? []) as LinhaDeVocabulario[]} travadas={travadas} idioma={idioma} />
       )}
     </div>
   );

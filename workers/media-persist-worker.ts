@@ -15,7 +15,7 @@ import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
-  resolveSessionRef,
+  resolveSessionRefDeMidia,
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
@@ -96,7 +96,7 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     const adapter = getAdapter(
       ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
     );
-    const sessionRef = sessao ? resolveSessionRef(sessao as unknown as ChannelSessionRef) : null;
+    const sessionRef = sessao ? resolveSessionRefDeMidia(sessao as unknown as ChannelSessionRef) : null;
     if (!adapter.fetchInboundMedia || !sessionRef) {
       // Canal que não sabe baixar não é erro: é o estado normal de um canal sem
       // mídia de entrada. Marcar `failed` faria a Central acusar um defeito que

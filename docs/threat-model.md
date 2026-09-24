@@ -269,3 +269,11 @@ construídas.
 4. Existe branch protection exigindo os dois checks do CI verdes no merge? (não é visível
    no checkout)
 5. Há intenção de pedir pentest externo antes de divulgar a v1.0.0 mais amplamente?
+
+## Espelho opcional da Inbox (0392, antes 0261)
+
+`/api/v1/webhooks/mirror/:token` usa capability de 256 bits na URL, hash SHA-256
+no banco, empresa/números permitidos, limite de corpo e rate limit. Não verifica
+HMAC da central. A URL deve ser tratada como credencial; pausar a fonte bloqueia
+a recepção. Configuração administrativa não expõe hash ou token depois da criação.
+Veja `docs/specs/inbox-mirror.md` para limites e defesa de saída.

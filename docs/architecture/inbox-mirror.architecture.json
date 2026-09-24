@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Espelho somente leitura",
+    "subtitle": "Atendimento preservado na origem",
+    "output": "inbox-mirror.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "origem",
+      "label": "origem"
+    },
+    {
+      "id": "servidor",
+      "label": "servidor"
+    },
+    {
+      "id": "banco",
+      "label": "banco"
+    },
+    {
+      "id": "tela",
+      "label": "tela"
+    }
+  ],
+  "mainPath": [
+    "source",
+    "receiver",
+    "db",
+    "inbox"
+  ],
+  "nodes": [
+    {
+      "id": "source",
+      "lane": "origem",
+      "col": 1,
+      "type": "service",
+      "label": "Webhook adicional da central"
+    },
+    {
+      "id": "receiver",
+      "lane": "servidor",
+      "col": 2,
+      "type": "service",
+      "label": "Receptor autenticado e store transacional"
+    },
+    {
+      "id": "db",
+      "lane": "banco",
+      "col": 3,
+      "type": "service",
+      "label": "Contatos, conversas e mensagens"
+    },
+    {
+      "id": "inbox",
+      "lane": "tela",
+      "col": 4,
+      "type": "service",
+      "label": "Inbox somente leitura"
+    },
+    {
+      "id": "settings",
+      "lane": "tela",
+      "col": 1,
+      "type": "service",
+      "label": "Conexões: criar, pausar e diagnosticar"
+    },
+    {
+      "id": "config",
+      "lane": "banco",
+      "col": 2,
+      "type": "service",
+      "label": "Fonte e mapeamento de números"
+    },
+    {
+      "id": "audit",
+      "lane": "banco",
+      "col": 3,
+      "type": "service",
+      "label": "api_audit_log"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "source",
+      "to": "receiver",
+      "label": "Eventos de mensagens"
+    },
+    {
+      "id": "e1",
+      "from": "receiver",
+      "to": "db",
+      "label": "Deduplicação e projeção"
+    },
+    {
+      "id": "e2",
+      "from": "db",
+      "to": "inbox",
+      "label": "Cópias na timeline"
+    },
+    {
+      "id": "e3",
+      "from": "settings",
+      "to": "config",
+      "label": "RBAC administrativo"
+    },
+    {
+      "id": "e4",
+      "from": "config",
+      "to": "receiver",
+      "label": "Hash, empresa, números e pausa"
+    },
+    {
+      "id": "e5",
+      "from": "receiver",
+      "to": "config",
+      "label": "Última entrega e erro"
+    },
+    {
+      "id": "e6",
+      "from": "config",
+      "to": "settings",
+      "label": "Estado observável"
+    },
+    {
+      "id": "e7",
+      "from": "receiver",
+      "to": "audit",
+      "label": "Recepção"
+    },
+    {
+      "id": "e8",
+      "from": "settings",
+      "to": "audit",
+      "label": "Criação e pausa"
+    },
+    {
+      "id": "e9",
+      "from": "inbox",
+      "to": "source",
+      "label": "Operador responde na origem"
+    }
+  ]
+}

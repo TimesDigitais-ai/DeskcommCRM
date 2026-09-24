@@ -87,6 +87,14 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // das ferramentas de agenda, logo abaixo, descreve.
   crm_enroll_followup_flow: "funil_vem_do_contato",
 
+  // ---- cancelar inscrição em fluxo de acompanhamento (fork): escreve
+  // em `followup_enrollments` (lib/mcp/tools/followup-flow.ts), nunca em
+  // `crm_leads`. Cancelar opera só por `enrollment_id` (sem contact_id nem
+  // lead_id): `sem_funil` declarado enquanto não houver resolvedor por
+  // enrollment, mesmo argumento de `crm_cancel_appointment`. (Inscrever é a
+  // `crm_enroll_followup_flow` do upstream, declarada acima.)
+  crm_cancel_followup_flow: "sem_funil",
+
   // ---- agenda: DECLARADAS `sem_funil`, e a declaração é o ponto ----
   //
   // As três operam por `contact_id` (marcar) ou `appointment_id` (remarcar e

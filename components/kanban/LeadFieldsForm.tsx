@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
+import { useEtiquetasDoLead } from "@/hooks/tags/useEtiquetasDoLead";
+import { LeadTagsField } from "./LeadTagsField";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
 import { parseReaisToCents } from "@/lib/money";
@@ -20,7 +22,6 @@ interface FormShape {
   title: string;
   description: string;
   valueReais: string;
-  tagsRaw: string;
   expected_close_date: string;
 }
 
@@ -52,13 +53,13 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
   const t = useT();
   const edit = useEditLead(pipelineId);
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(lead.custom_fields ?? {});
+  const etiquetas = useEtiquetasDoLead(lead);
 
   const form = useForm<FormShape>({
     defaultValues: {
       title: lead.title,
       description: lead.description ?? "",
       valueReais: centsToReais(lead.value_cents),
-      tagsRaw: (lead.tags ?? []).join(", "),
       expected_close_date: lead.expected_close_date ?? "",
     },
   });
@@ -68,19 +69,14 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       title: lead.title,
       description: lead.description ?? "",
       valueReais: centsToReais(lead.value_cents),
-      tagsRaw: (lead.tags ?? []).join(", "),
       expected_close_date: lead.expected_close_date ?? "",
     });
     setCustomFields(lead.custom_fields ?? {});
+    etiquetas.zerar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
 
   async function onSubmit(values: FormShape) {
-    const tags = values.tagsRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
     const reais = values.valueReais.trim();
     let valueCents: number | null = null;
     if (reais.length > 0) {
@@ -95,10 +91,13 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       title: values.title.trim(),
       description: values.description.trim() ? values.description.trim() : null,
       value_cents: valueCents,
-      tags,
       expected_close_date: values.expected_close_date || null,
       ...(fieldDefs.length > 0 ? { custom_fields: customFields } : {}),
     };
+
+    // Etiquetas só entram no PATCH se o usuário mexeu nelas (ver o hook).
+    const { tagsDoLead, tagsDoContato } = etiquetas.planejar();
+    if (tagsDoLead) patch.tags = tagsDoLead;
 
     const parsed = updateLeadSchema.safeParse(patch);
     if (!parsed.success) {
@@ -108,6 +107,8 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     }
 
     try {
+      // Contato primeiro: se falhar, o lead nem é tocado (o toast já apareceu).
+      if (tagsDoContato) await etiquetas.gravarContato(tagsDoContato);
       await edit.mutateAsync({
         leadId: lead.id,
         patch: parsed.data as UpdateLeadInput,
@@ -161,10 +162,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="tagsRaw">{t("Tags (separadas por vírgula)")}</Label>
-          <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
-        </div>
+        <LeadTagsField etiquetas={etiquetas} disabled={edit.isPending} />
 
         {fieldDefs.length > 0 && (
           <div className="space-y-2 border-t border-border pt-4">
@@ -184,7 +182,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
             {t("Cancelar")}
           </Button>
         )}
-        <Button type="submit" disabled={edit.isPending}>
+        <Button type="submit" disabled={edit.isPending || etiquetas.ocupado}>
           {edit.isPending ? t("Salvando…") : t("Salvar")}
         </Button>
       </div>

@@ -31,6 +31,21 @@ import type { Lead } from "@/lib/types/leads";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * `.in()` com centenas de uuids vira uma URL grande o bastante pro PostgREST
+ * recusar de cara — medido em produção (cliente, 16/09/2026): 416 ids
+ * únicos, URL de ~16KB, `fetch failed` em ~300ms (recusa, não timeout de
+ * query lenta). O board inteiro caía com "Não consegui carregar este funil"
+ * assim que um pipeline passou de ~400 leads. 150 por lote fica bem abaixo do
+ * limite observado, com folga pra crescer.
+ */
+const IN_CHUNK_SIZE = 150;
+export function emLotes<T>(itens: T[], tamanho = IN_CHUNK_SIZE): T[][] {
+  const lotes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) lotes.push(itens.slice(i, i + tamanho));
+  return lotes;
+}
+
 interface RouteCtx {
   params: Promise<{ id: string }>;
 }
@@ -188,17 +203,20 @@ async function withScores(
 ): Promise<{ leads: Lead[]; error: string | null }> {
   if (leads.length === 0) return { leads, error: null };
 
-  const { data, error } = await supabase
-    .from("crm_lead_scores")
-    .select(
-      "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
-    )
-    .eq("organization_id", organizationId)
-    .in(
-      "lead_id",
-      leads.map((l) => l.id),
-    );
-  if (error) return { leads, error: error.message };
+  const resultados = await Promise.all(
+    emLotes(leads.map((l) => l.id)).map((lote) =>
+      supabase
+        .from("crm_lead_scores")
+        .select(
+          "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
+        )
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote),
+    ),
+  );
+  const falhou = resultados.find((r) => r.error);
+  if (falhou?.error) return { leads, error: falhou.error.message };
+  const data = resultados.flatMap((r) => r.data ?? []);
 
   const porLead = new Map<string, NonNullable<Lead["score"]>>();
   for (const row of (data ?? []) as Array<{
@@ -260,13 +278,25 @@ async function withConversas(
   const contactIds = [...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c))];
   if (contactIds.length === 0) return { leads, error: null };
 
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee, tags")
-    .eq("organization_id", organizationId)
-    .in("contact_id", contactIds)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
-  if (error) return { leads, error: error.message };
+  // Cada contact_id cai em UM lote só — "primeira vista vence" abaixo continua
+  // correto por contato mesmo depois do flatMap, porque a ordenação por
+  // last_message_at é preservada DENTRO do lote de cada um.
+  //
+  // (Reconciliação com o upstream v1.44.0: o lote é NOSSO, a coluna `tags` —
+  // a caixa "conversa" do marcador — é DELES; a consulta traz as duas coisas.)
+  const resultados = await Promise.all(
+    emLotes(contactIds).map((lote) =>
+      supabase
+        .from("conversations")
+        .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee, tags")
+        .eq("organization_id", organizationId)
+        .in("contact_id", lote)
+        .order("last_message_at", { ascending: false, nullsFirst: false }),
+    ),
+  );
+  const falhou = resultados.find((r) => r.error);
+  if (falhou?.error) return { leads, error: falhou.error.message };
+  const data = resultados.flatMap((r) => r.data ?? []);
 
   const porContato = new Map<string, NonNullable<Lead["conversa"]>>();
   const marcadoresPorContato = new Map<string, Set<string>>();
@@ -337,14 +367,23 @@ async function withMarcadoresDoContato(
   ];
   if (contactIds.length === 0) return { leads: leadsDoQuadro, error: null };
 
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("id, tags, phone_number, email, custom_fields, is_anonymized")
-    .eq("organization_id", organizationId)
-    .in("id", contactIds);
-  if (error) return { leads: leadsDoQuadro, error: error.message };
+  // Em lotes (nosso conserto, 16/09/2026): `.in()` com centenas de ids
+  // estoura a URL do PostgREST e derruba o quadro inteiro com "fetch failed".
+  const resultados = await Promise.all(
+    emLotes(contactIds).map((lote) =>
+      supabase
+        .from("contacts")
+        .select("id, tags, phone_number, email, custom_fields, is_anonymized")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    ),
+  );
+  const falhou = resultados.find((r) => r.error);
+  if (falhou?.error) return { leads: leadsDoQuadro, error: falhou.error.message };
 
-  const linhas = (data ?? []) as Array<{ id: string; tags: string[] | null } & LinhaDoContatoNoQuadro>;
+  const linhas = resultados.flatMap((r) => r.data ?? []) as Array<
+    { id: string; tags: string[] | null } & LinhaDoContatoNoQuadro
+  >;
   const leads = anexarDadosDoContato(leadsDoQuadro, linhas);
 
   const porContato = new Map<string, string[]>();
@@ -374,26 +413,33 @@ async function withNextActions(
   ];
   if (contactIds.length === 0) return { leads, error: null };
 
-  const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
-    await Promise.all([
-      supabase
-        .from("lead_state")
-        .select("contact_id, next_action, next_action_seq, updated_at")
-        .eq("organization_id", organizationId)
-        .in("contact_id", contactIds)
-        .not("next_action", "is", null),
-      supabase
-        .from("crm_leads")
-        .select(
-          "id, organization_id, pipeline_id, status, last_activity_at, created_at, contact_id",
-        )
-        .eq("organization_id", organizationId)
-        .eq("status", "open")
-        .in("contact_id", contactIds),
-    ]);
+  const porLote = await Promise.all(
+    emLotes(contactIds).map((lote) =>
+      Promise.all([
+        supabase
+          .from("lead_state")
+          .select("contact_id, next_action, next_action_seq, updated_at")
+          .eq("organization_id", organizationId)
+          .in("contact_id", lote)
+          .not("next_action", "is", null),
+        supabase
+          .from("crm_leads")
+          .select(
+            "id, organization_id, pipeline_id, status, last_activity_at, created_at, contact_id",
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "open")
+          .in("contact_id", lote),
+      ]),
+    ),
+  );
+  const estadosErr = porLote.map(([e]) => e.error).find(Boolean);
+  const candErr = porLote.map(([, c]) => c.error).find(Boolean);
   if (estadosErr) return { leads, error: estadosErr.message };
   if (candErr) return { leads, error: candErr.message };
-  if (!estados || estados.length === 0) return { leads, error: null };
+  const estados = porLote.flatMap(([e]) => e.data ?? []);
+  const candidatos = porLote.flatMap(([, c]) => c.data ?? []);
+  if (estados.length === 0) return { leads, error: null };
 
   const { porLead, ambiguas } = roteiaProximasAcoes(
     estados as EstadoDoContato[],
