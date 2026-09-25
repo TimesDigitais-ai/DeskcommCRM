@@ -20,3 +20,13 @@ Detalhes: `docs/specs/inbox-mirror.md` e `docs/threat-model.md`.
 Mantido para uso interno da Times Digitais. Issues estão desligadas e PRs de terceiros
 podem não ser revisados. Correções que valham para todos são melhor enviadas ao upstream.
 Este fork acompanha as **releases** do upstream, não o `main` dele.
+
+## Fluxo de trabalho
+
+1. Trabalhe numa branch e abra um PR contra `main`; o `ci` roda no PR.
+2. Se o CI não iniciar sozinho, dispare-o à mão na branch:
+   `gh workflow run ci.yml --ref <branch>` (o `ci.yml` aceita `workflow_dispatch`).
+3. Só faça merge com `verify` e `invariants` verdes.
+4. Não coloque neste repositório nomes de clientes, telefones, domínios de servidor,
+   caminhos de infraestrutura nem chaves: ele é público. O que for específico de um
+   cliente fica num repositório privado de operação.
