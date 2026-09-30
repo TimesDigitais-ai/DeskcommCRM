@@ -85,6 +85,14 @@ export async function ingestMirror(pool: pg.Pool, token: string, payload: unknow
              and coalesce((metadata->'mirror_session'->>'updated_at')::timestamptz,'epoch') <= $7::timestamptz`,
           [org, sessao.sessionId, sessao.department, sessao.agent, sessao.status, sessao.agentCleared, sessao.updatedAt, sessao.departmentCleared],
         );
+        if (sessao.contactName && sessao.contactPhone) {
+          const variants = phoneLookupVariants(sessao.contactPhone);
+          await db.query(
+            `update contacts set name=$3, updated_at=now()
+             where organization_id=$1 and phone_number=any($2::text[]) and is_merged_into is null and (name is null or name='')`,
+            [org, variants, sessao.contactName],
+          );
+        }
       }
       await db.query("commit");
       return { status: "ignored", organizationId: org };

@@ -34,6 +34,8 @@ describe("eventos de sessão do espelho", () => {
       agentCleared: false,
       status: "IN_PROGRESS",
       updatedAt: "2026-09-21T12:05:00Z",
+      contactName: null,
+      contactPhone: null,
     });
   });
 
@@ -54,6 +56,23 @@ describe("eventos de sessão do espelho", () => {
       department: null,
       agent: null,
     });
+  });
+
+  it("extrai nome e telefone do contato de contactDetails (SESSION_NEW)", () => {
+    const e = evento("SESSION_NEW", {
+      id: sessao,
+      contactDetails: { name: " João Silva ", phonenumber: "+55|45|999001234" },
+    });
+    const r = parseMirrorSessionEvent(e, company)!;
+    expect(r.contactName).toBe("João Silva");
+    expect(r.contactPhone).toBe("+5545999001234");
+  });
+
+  it("contactDetails ausente ou vazio não preenche nome/telefone", () => {
+    const e = evento("SESSION_NEW", { id: sessao });
+    const r = parseMirrorSessionEvent(e, company)!;
+    expect(r.contactName).toBeNull();
+    expect(r.contactPhone).toBeNull();
   });
 
   it("formato que não entende vira null, nunca erro — a origem não pode reenviar para sempre", () => {
@@ -150,8 +169,10 @@ describe("gravação da sessão no espelho (guarda de fonte)", () => {
     expect(trecho).toContain("metadata->>'read_only_mirror'='true'");
   });
 
-  it("nunca mexe em atribuição, status, mensagens ou contato", () => {
+  it("nunca mexe em atribuição, status ou mensagens — só preenche nome do contato quando vazio", () => {
     expect(trecho).not.toMatch(/assigned_to|assignee_kind|status\s*=|force_human|bot_silenced|insert into|delete from/i);
+    expect(trecho).toContain("update contacts set name=");
+    expect(trecho).toContain("name is null or name=''");
   });
 
   it("não aplica evento mais antigo por cima de um mais novo", () => {
