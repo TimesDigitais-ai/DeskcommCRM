@@ -53,6 +53,10 @@ export type MirrorSessionInfo = {
   agentCleared: boolean;
   status: string | null;
   updatedAt: string;
+  /** Nome do contato extraído de `contactDetails.name` (SESSION_NEW). `null` = não veio. */
+  contactName: string | null;
+  /** Telefone do contato extraído de `contactDetails.phonenumber`. `null` = não veio. */
+  contactPhone: string | null;
 };
 
 const SESSION_EVENTS = ["SESSION_NEW", "SESSION_UPDATE", "SESSION_COMPLETE"];
@@ -84,6 +88,9 @@ export function parseMirrorSessionEvent(payload: unknown, companyId: string): Mi
   if (!id.success) return null;
   const temUserId = "userId" in c;
   const updated = z.iso.datetime({ offset: true }).safeParse(c.updatedAt);
+  const contactDetails = objeto(c.contactDetails);
+  const rawPhone = typeof contactDetails.phonenumber === "string" ? contactDetails.phonenumber.replace(/\|/g, "").trim() : "";
+  const contactPhone = /^\+[1-9][0-9]{7,14}$/.test(rawPhone) ? rawPhone : null;
   return {
     sessionId: id.data,
     department: nomeCurto(objeto(c.departmentDetails).name),
@@ -94,6 +101,8 @@ export function parseMirrorSessionEvent(payload: unknown, companyId: string): Mi
     agentCleared: temUserId && (c.userId == null || c.userId === "" || c.userId === ZERO_UUID),
     status: typeof c.status === "string" && c.status.trim() ? c.status.trim().toUpperCase().slice(0, 32) : null,
     updatedAt: updated.success ? updated.data : parsed.data.date,
+    contactName: nomeCurto(contactDetails.name),
+    contactPhone,
   };
 }
 
